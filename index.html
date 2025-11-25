@@ -1,219 +1,285 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>VR Web Prototype</title>
-<style>
-body,html{
-  margin:0;
-  padding:0;
-  overflow:hidden;
-  background:black;
-}
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cámara VR</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
 
-/* Pantalla VR dividida */
-.vr-screen{
-  position:absolute;
-  top:0;
-  width:50vw;
-  height:100vh;
-  overflow:hidden;
-}
+        body {
+            overflow: hidden;
+            background: #000;
+            font-family: Arial, sans-serif;
+        }
 
-/* Cámara como fondo */
-.videoFeed{
-  position:absolute;
-  top:0;
-  left:0;
-  width:200vw; /* Se duplica para llenar ambos ojos */
-  height:100vh;
-  object-fit:cover;
-}
+        #container {
+            display: flex;
+            width: 100vw;
+            height: 100vh;
+        }
 
-/* Escena virtual */
-.scene{
-  position:absolute;
-  width:2000px;
-  height:2000px;
-  top:50%;
-  left:50%;
-  transform-style:preserve-3d;
-}
+        .eye-view {
+            width: 50%;
+            height: 100%;
+            position: relative;
+            overflow: hidden;
+        }
 
-/* Panel flotante */
-.panel{
-  position:absolute;
-  width:300px;
-  height:200px;
-  background:rgba(255,255,255,0.9);
-  border-radius:10px;
-  display:flex;
-  justify-content:center;
-  align-items:center;
-  text-align:center;
-  font-size:22px;
-  transform-style:preserve-3d;
-}
+        #left-eye {
+            border-right: 2px solid #333;
+        }
 
-/* Área de gesto */
-.panel .gesture-zone{
-  position:absolute;
-  bottom:5px;
-  width:90%;
-  height:40px;
-  background:rgba(0,0,0,0.15);
-  display:flex;
-  justify-content:center;
-  align-items:center;
-  font-size:14px;
-  border-radius:8px;
-}
-</style>
+        #right-eye {
+            border-left: 2px solid #333;
+        }
+
+        video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1); /* Espejo para que se vea natural */
+        }
+
+        #controls {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1000;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px 25px;
+            border-radius: 10px;
+            color: white;
+            text-align: center;
+        }
+
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        button:hover {
+            background: #45a049;
+        }
+
+        button:disabled {
+            background: #666;
+            cursor: not-allowed;
+        }
+
+        #error {
+            color: #ff4444;
+            margin-top: 10px;
+            display: none;
+            max-width: 400px;
+        }
+
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 18px;
+        }
+
+        #info {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px 20px;
+            border-radius: 5px;
+            color: #aaa;
+            font-size: 12px;
+            z-index: 1000;
+        }
+    </style>
 </head>
 <body>
+    <div id="container">
+        <div class="eye-view" id="left-eye">
+            <video id="video-left" autoplay playsinline></video>
+            <div class="loading" id="loading-left">Cargando cámara...</div>
+        </div>
+        <div class="eye-view" id="right-eye">
+            <video id="video-right" autoplay playsinline></video>
+            <div class="loading" id="loading-right">Cargando cámara...</div>
+        </div>
+    </div>
 
-<!-- Vista izquierda -->
-<div class="vr-screen" style="left:0;">
-  <video id="cameraL" class="videoFeed" autoplay playsinline></video>
-  <div id="sceneL" class="scene"></div>
-</div>
+    <div id="controls">
+        <button id="startBtn">Iniciar Cámara</button>
+        <button id="stopBtn" disabled>Detener Cámara</button>
+        <div id="error"></div>
+    </div>
 
-<!-- Vista derecha -->
-<div class="vr-screen" style="right:0;">
-  <video id="cameraR" class="videoFeed" autoplay playsinline></video>
-  <div id="sceneR" class="scene"></div>
-</div>
+    <div id="info">
+        Nota: Requiere HTTPS o localhost para funcionar
+    </div>
 
-<script>
-// ============================================================
-// 1. ABRIR CÁMARA DEL TELÉFONO
-// ============================================================
-navigator.mediaDevices.getUserMedia({
-  video:{ facingMode:"environment" },
-  audio:false
-}).then(stream => {
-  cameraL.srcObject = stream;
-  cameraR.srcObject = stream;
-});
+    <script>
+        const videoLeft = document.getElementById('video-left');
+        const videoRight = document.getElementById('video-right');
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const errorDiv = document.getElementById('error');
+        const loadingLeft = document.getElementById('loading-left');
+        const loadingRight = document.getElementById('loading-right');
 
-// ============================================================
-// 2. CREAR PANELES FLOTANTES
-// ============================================================
-const panelsData = [
-  { x: -400, y: -300, z: -600, text:"Panel 1" },
-  { x:  0,   y: -200, z: -800, text:"Panel 2" },
-  { x:  400, y: -300, z: -600, text:"Panel 3" },
-];
+        let stream = null;
 
-const sceneL = document.getElementById("sceneL");
-const sceneR = document.getElementById("sceneR");
-const panels = [];
+        // Función para obtener getUserMedia con compatibilidad
+        function getUserMedia(constraints) {
+            // Verificar si navigator.mediaDevices existe
+            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                return navigator.mediaDevices.getUserMedia(constraints);
+            }
+            
+            // Fallback para navegadores antiguos
+            const getUserMedia = navigator.getUserMedia || 
+                                navigator.webkitGetUserMedia || 
+                                navigator.mozGetUserMedia || 
+                                navigator.msGetUserMedia;
 
-function createPanels(scene){
-  panelsData.forEach((p,i)=>{
-    let div = document.createElement("div");
-    div.className = "panel";
-    div.style.transform = `translate3d(${p.x}px, ${p.y}px, ${p.z}px)`;
+            if (!getUserMedia) {
+                return Promise.reject(new Error('getUserMedia no está soportado en este navegador'));
+            }
 
-    let text = document.createElement("div");
-    text.innerHTML = p.text;
-    div.appendChild(text);
+            return new Promise((resolve, reject) => {
+                getUserMedia.call(navigator, constraints, resolve, reject);
+            });
+        }
 
-    let gesture = document.createElement("div");
-    gesture.className = "gesture-zone";
-    gesture.innerHTML = "Mantén la mirada aquí";
-    div.appendChild(gesture);
+        // Verificar compatibilidad al cargar
+        function checkCompatibility() {
+            const isSecure = window.location.protocol === 'https:' || 
+                           window.location.hostname === 'localhost' || 
+                           window.location.hostname === '127.0.0.1';
 
-    div.dataset.index = i;
-    scene.appendChild(div);
-    panels.push({ element:div, ...p, moving:false });
-  });
-}
+            if (!isSecure) {
+                showError('⚠️ Esta página debe abrirse desde HTTPS o localhost para acceder a la cámara. Por favor, usa un servidor local o HTTPS.');
+                startBtn.disabled = true;
+                return false;
+            }
 
-createPanels(sceneL);
-createPanels(sceneR);
+            if (!navigator.mediaDevices && !navigator.getUserMedia && 
+                !navigator.webkitGetUserMedia && !navigator.mozGetUserMedia) {
+                showError('⚠️ Tu navegador no soporta acceso a la cámara. Por favor, usa un navegador moderno (Chrome, Firefox, Edge, Safari).');
+                startBtn.disabled = true;
+                return false;
+            }
 
-// ============================================================
-// 3. CAPTURAR ORIENTACIÓN DE LA CABEZA
-// ============================================================
-let rotAlpha = 0, rotBeta = 0, rotGamma = 0;
+            return true;
+        }
 
-window.addEventListener("deviceorientation", (e)=>{
-  rotAlpha = e.alpha;     // giro horizontal
-  rotBeta  = e.beta;      // inclinación adelante/atrás
-  rotGamma = e.gamma;     // inclinación izquierda/derecha
+        function showError(message) {
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+        }
 
-  updateCameraRotation();
-});
+        async function startCamera() {
+            try {
+                errorDiv.style.display = 'none';
+                startBtn.disabled = true;
 
-function updateCameraRotation(){
-  const t = `rotateX(${rotBeta * -0.5}deg) rotateY(${rotAlpha * -0.5}deg)`;
+                // Solicitar acceso a la cámara con compatibilidad
+                stream = await getUserMedia({
+                    video: {
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 },
+                        facingMode: 'user' // Cámara frontal
+                    }
+                });
 
-  sceneL.style.transform = t;
-  sceneR.style.transform = t;
-}
+                // Asignar el stream a ambos videos
+                videoLeft.srcObject = stream;
+                videoRight.srcObject = stream;
 
-// ============================================================
-// 4. GAZE DETECTOR: VER SI EL USUARIO MIRA UNA ZONA
-// ============================================================
-let gazeTimer = 0;
-let gazeStart = 0;
-let gazeTarget = null;     // panel/gesto elegido
-let lastAngles = {alpha:rotAlpha, beta:rotBeta};
+                // Esperar a que los videos estén listos
+                await Promise.all([
+                    new Promise(resolve => {
+                        if (videoLeft.readyState >= 2) {
+                            loadingLeft.style.display = 'none';
+                            resolve();
+                        } else {
+                            videoLeft.onloadedmetadata = () => {
+                                loadingLeft.style.display = 'none';
+                                resolve();
+                            };
+                        }
+                    }),
+                    new Promise(resolve => {
+                        if (videoRight.readyState >= 2) {
+                            loadingRight.style.display = 'none';
+                            resolve();
+                        } else {
+                            videoRight.onloadedmetadata = () => {
+                                loadingRight.style.display = 'none';
+                                resolve();
+                            };
+                        }
+                    })
+                ]);
 
-// CHECK cada 100ms
-setInterval(()=>{
-  detectGaze();
-},100);
+                stopBtn.disabled = false;
+            } catch (err) {
+                console.error('Error al acceder a la cámara:', err);
+                let errorMessage = 'Error al acceder a la cámara: ';
+                
+                if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+                    errorMessage += 'Permiso denegado. Por favor, permite el acceso a la cámara.';
+                } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+                    errorMessage += 'No se encontró ninguna cámara.';
+                } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+                    errorMessage += 'La cámara está siendo usada por otra aplicación.';
+                } else if (err.name === 'OverconstrainedError' || err.name === 'ConstraintNotSatisfiedError') {
+                    errorMessage += 'Las restricciones de la cámara no se pueden satisfacer.';
+                } else if (err.name === 'NotSupportedError') {
+                    errorMessage += 'getUserMedia no está soportado. Usa HTTPS o localhost.';
+                } else {
+                    errorMessage += err.message || 'Error desconocido';
+                }
+                
+                showError(errorMessage);
+                startBtn.disabled = false;
+            }
+        }
 
-function detectGaze(){
-  // Posición central de la pantalla (punto de mira fijo)
-  const cx = window.innerWidth/2;
-  const cy = window.innerHeight/2;
+        function stopCamera() {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
+                videoLeft.srcObject = null;
+                videoRight.srcObject = null;
+                loadingLeft.style.display = 'block';
+                loadingRight.style.display = 'block';
+                startBtn.disabled = false;
+                stopBtn.disabled = true;
+            }
+        }
 
-  // Ver qué elemento está en el centro usando elementFromPoint
-  const el = document.elementFromPoint(cx, cy);
+        startBtn.addEventListener('click', startCamera);
+        stopBtn.addEventListener('click', stopCamera);
 
-  if(!el) return;
-
-  // ¿Estamos mirando una zona de gesto?
-  if(el.classList.contains("gesture-zone")){
-    if(gazeTarget !== el){
-      gazeTarget = el;
-      gazeStart = Date.now();
-    } else {
-      let held = Date.now() - gazeStart;
-      if(held > 1000){ // 1 segundo
-        togglePanelMove(el.parentNode.dataset.index);
-        gazeStart = Date.now(); // reiniciar
-      }
-    }
-  } else {
-    gazeTarget = null;
-  }
-}
-
-// ============================================================
-// 5. MODO MOVER UN PANEL MIRANDO
-// ============================================================
-function togglePanelMove(idx){
-  const p = panels[idx];
-  p.moving = !p.moving;
-  console.log("Panel",idx,p.moving?"MODO MOVER":"MODO FIJO");
-}
-
-setInterval(()=>{
-  panels.forEach((p)=>{
-    if(!p.moving) return;
-
-    // Cambiar posición según rotAlpha/rotBeta (movimiento simple)
-    p.x = -(rotAlpha * 5);
-    p.y = rotBeta * 5 - 200;
-
-    p.element.style.transform = 
-      `translate3d(${p.x}px, ${p.y}px, ${p.z}px)`;
-  });
-},100);
-</script>
+        // Verificar compatibilidad y luego iniciar automáticamente
+        window.addEventListener('load', () => {
+            if (checkCompatibility()) {
+                startCamera();
+            }
+        });
+    </script>
 </body>
 </html>
