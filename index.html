@@ -2,284 +2,75 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cámara VR</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            overflow: hidden;
-            background: #000;
-            font-family: Arial, sans-serif;
-        }
-
-        #container {
-            display: flex;
-            width: 100vw;
-            height: 100vh;
-        }
-
-        .eye-view {
-            width: 50%;
-            height: 100%;
-            position: relative;
-            overflow: hidden;
-        }
-
-        #left-eye {
-            border-right: 2px solid #333;
-        }
-
-        #right-eye {
-            border-left: 2px solid #333;
-        }
-
-        video {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            transform: scaleX(-1); /* Espejo para que se vea natural */
-        }
-
-        #controls {
-            position: fixed;
-            top: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            z-index: 1000;
-            background: rgba(0, 0, 0, 0.7);
-            padding: 15px 25px;
-            border-radius: 10px;
-            color: white;
-            text-align: center;
-        }
-
-        button {
-            background: #4CAF50;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            margin: 5px;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 16px;
-        }
-
-        button:hover {
-            background: #45a049;
-        }
-
-        button:disabled {
-            background: #666;
-            cursor: not-allowed;
-        }
-
-        #error {
-            color: #ff4444;
-            margin-top: 10px;
-            display: none;
-            max-width: 400px;
-        }
-
-        .loading {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            color: white;
-            font-size: 18px;
-        }
-
-        #info {
-            position: fixed;
-            bottom: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(0, 0, 0, 0.7);
-            padding: 10px 20px;
-            border-radius: 5px;
-            color: #aaa;
-            font-size: 12px;
-            z-index: 1000;
-        }
-    </style>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>VR Desk - Vista Dividida</title>
+    <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <div id="container">
-        <div class="eye-view" id="left-eye">
-            <video id="video-left" autoplay playsinline></video>
-            <div class="loading" id="loading-left">Cargando cámara...</div>
+    <div id="vr-container">
+        <!-- Vista izquierda (ojo izquierdo) -->
+        <div class="eye-view left-eye">
+            <div class="scene" id="scene-left">
+                <div class="screen" id="screen-1">
+                    <div class="screen-content">
+                        <h2>Pantalla 1</h2>
+                        <p>Contenido de la pantalla flotante</p>
+                    </div>
+                </div>
+                <div class="screen" id="screen-2">
+                    <div class="screen-content">
+                        <h2>Pantalla 2</h2>
+                        <p>Otra pantalla flotante</p>
+                    </div>
+                </div>
+                <div class="screen" id="screen-3">
+                    <div class="screen-content">
+                        <h2>Pantalla 3</h2>
+                        <p>Tercera pantalla flotante</p>
+                    </div>
+                </div>
+                <!-- Entorno simple -->
+                <div class="floor"></div>
+                <div class="grid"></div>
+            </div>
         </div>
-        <div class="eye-view" id="right-eye">
-            <video id="video-right" autoplay playsinline></video>
-            <div class="loading" id="loading-right">Cargando cámara...</div>
+
+        <!-- Vista derecha (ojo derecho) -->
+        <div class="eye-view right-eye">
+            <div class="scene" id="scene-right">
+                <div class="screen" id="screen-1-right">
+                    <div class="screen-content">
+                        <h2>Pantalla 1</h2>
+                        <p>Contenido de la pantalla flotante</p>
+                    </div>
+                </div>
+                <div class="screen" id="screen-2-right">
+                    <div class="screen-content">
+                        <h2>Pantalla 2</h2>
+                        <p>Otra pantalla flotante</p>
+                    </div>
+                </div>
+                <div class="screen" id="screen-3-right">
+                    <div class="screen-content">
+                        <h2>Pantalla 3</h2>
+                        <p>Tercera pantalla flotante</p>
+                    </div>
+                </div>
+                <!-- Entorno simple -->
+                <div class="floor"></div>
+                <div class="grid"></div>
+            </div>
         </div>
     </div>
 
-    <div id="controls">
-        <button id="startBtn">Iniciar Cámara</button>
-        <button id="stopBtn" disabled>Detener Cámara</button>
-        <div id="error"></div>
+    <!-- Indicador de estado -->
+    <div id="status-indicator">
+        <div id="status-text">Esperando sensores...</div>
+        <div id="orientation-info"></div>
     </div>
 
-    <div id="info">
-        Nota: Requiere HTTPS o localhost para funcionar
-    </div>
-
-    <script>
-        const videoLeft = document.getElementById('video-left');
-        const videoRight = document.getElementById('video-right');
-        const startBtn = document.getElementById('startBtn');
-        const stopBtn = document.getElementById('stopBtn');
-        const errorDiv = document.getElementById('error');
-        const loadingLeft = document.getElementById('loading-left');
-        const loadingRight = document.getElementById('loading-right');
-
-        let stream = null;
-
-        // Función para obtener getUserMedia con compatibilidad
-        function getUserMedia(constraints) {
-            // Verificar si navigator.mediaDevices existe
-            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-                return navigator.mediaDevices.getUserMedia(constraints);
-            }
-            
-            // Fallback para navegadores antiguos
-            const getUserMedia = navigator.getUserMedia || 
-                                navigator.webkitGetUserMedia || 
-                                navigator.mozGetUserMedia || 
-                                navigator.msGetUserMedia;
-
-            if (!getUserMedia) {
-                return Promise.reject(new Error('getUserMedia no está soportado en este navegador'));
-            }
-
-            return new Promise((resolve, reject) => {
-                getUserMedia.call(navigator, constraints, resolve, reject);
-            });
-        }
-
-        // Verificar compatibilidad al cargar
-        function checkCompatibility() {
-            const isSecure = window.location.protocol === 'https:' || 
-                           window.location.hostname === 'localhost' || 
-                           window.location.hostname === '127.0.0.1';
-
-            if (!isSecure) {
-                showError('⚠️ Esta página debe abrirse desde HTTPS o localhost para acceder a la cámara. Por favor, usa un servidor local o HTTPS.');
-                startBtn.disabled = true;
-                return false;
-            }
-
-            if (!navigator.mediaDevices && !navigator.getUserMedia && 
-                !navigator.webkitGetUserMedia && !navigator.mozGetUserMedia) {
-                showError('⚠️ Tu navegador no soporta acceso a la cámara. Por favor, usa un navegador moderno (Chrome, Firefox, Edge, Safari).');
-                startBtn.disabled = true;
-                return false;
-            }
-
-            return true;
-        }
-
-        function showError(message) {
-            errorDiv.textContent = message;
-            errorDiv.style.display = 'block';
-        }
-
-        async function startCamera() {
-            try {
-                errorDiv.style.display = 'none';
-                startBtn.disabled = true;
-
-                // Solicitar acceso a la cámara con compatibilidad
-                stream = await getUserMedia({
-                    video: {
-                        width: { ideal: 1920 },
-                        height: { ideal: 1080 },
-                        facingMode: 'user' // Cámara frontal
-                    }
-                });
-
-                // Asignar el stream a ambos videos
-                videoLeft.srcObject = stream;
-                videoRight.srcObject = stream;
-
-                // Esperar a que los videos estén listos
-                await Promise.all([
-                    new Promise(resolve => {
-                        if (videoLeft.readyState >= 2) {
-                            loadingLeft.style.display = 'none';
-                            resolve();
-                        } else {
-                            videoLeft.onloadedmetadata = () => {
-                                loadingLeft.style.display = 'none';
-                                resolve();
-                            };
-                        }
-                    }),
-                    new Promise(resolve => {
-                        if (videoRight.readyState >= 2) {
-                            loadingRight.style.display = 'none';
-                            resolve();
-                        } else {
-                            videoRight.onloadedmetadata = () => {
-                                loadingRight.style.display = 'none';
-                                resolve();
-                            };
-                        }
-                    })
-                ]);
-
-                stopBtn.disabled = false;
-            } catch (err) {
-                console.error('Error al acceder a la cámara:', err);
-                let errorMessage = 'Error al acceder a la cámara: ';
-                
-                if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-                    errorMessage += 'Permiso denegado. Por favor, permite el acceso a la cámara.';
-                } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
-                    errorMessage += 'No se encontró ninguna cámara.';
-                } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
-                    errorMessage += 'La cámara está siendo usada por otra aplicación.';
-                } else if (err.name === 'OverconstrainedError' || err.name === 'ConstraintNotSatisfiedError') {
-                    errorMessage += 'Las restricciones de la cámara no se pueden satisfacer.';
-                } else if (err.name === 'NotSupportedError') {
-                    errorMessage += 'getUserMedia no está soportado. Usa HTTPS o localhost.';
-                } else {
-                    errorMessage += err.message || 'Error desconocido';
-                }
-                
-                showError(errorMessage);
-                startBtn.disabled = false;
-            }
-        }
-
-        function stopCamera() {
-            if (stream) {
-                stream.getTracks().forEach(track => track.stop());
-                stream = null;
-                videoLeft.srcObject = null;
-                videoRight.srcObject = null;
-                loadingLeft.style.display = 'block';
-                loadingRight.style.display = 'block';
-                startBtn.disabled = false;
-                stopBtn.disabled = true;
-            }
-        }
-
-        startBtn.addEventListener('click', startCamera);
-        stopBtn.addEventListener('click', stopCamera);
-
-        // Verificar compatibilidad y luego iniciar automáticamente
-        window.addEventListener('load', () => {
-            if (checkCompatibility()) {
-                startCamera();
-            }
-        });
-    </script>
+    <script src="script.js"></script>
 </body>
 </html>
