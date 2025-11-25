@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VR Web Prototype</title>
+<style>
+body,html{
+  margin:0;
+  padding:0;
+  overflow:hidden;
+  background:black;
+}
+
+/* Pantalla VR dividida */
+.vr-screen{
+  position:absolute;
+  top:0;
+  width:50vw;
+  height:100vh;
+  overflow:hidden;
+}
+
+/* Cámara como fondo */
+.videoFeed{
+  position:absolute;
+  top:0;
+  left:0;
+  width:200vw; /* Se duplica para llenar ambos ojos */
+  height:100vh;
+  object-fit:cover;
+}
+
+/* Escena virtual */
+.scene{
+  position:absolute;
+  width:2000px;
+  height:2000px;
+  top:50%;
+  left:50%;
+  transform-style:preserve-3d;
+}
+
+/* Panel flotante */
+.panel{
+  position:absolute;
+  width:300px;
+  height:200px;
+  background:rgba(255,255,255,0.9);
+  border-radius:10px;
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  text-align:center;
+  font-size:22px;
+  transform-style:preserve-3d;
+}
+
+/* Área de gesto */
+.panel .gesture-zone{
+  position:absolute;
+  bottom:5px;
+  width:90%;
+  height:40px;
+  background:rgba(0,0,0,0.15);
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  font-size:14px;
+  border-radius:8px;
+}
+</style>
+</head>
+<body>
+
+<!-- Vista izquierda -->
+<div class="vr-screen" style="left:0;">
+  <video id="cameraL" class="videoFeed" autoplay playsinline></video>
+  <div id="sceneL" class="scene"></div>
+</div>
+
+<!-- Vista derecha -->
+<div class="vr-screen" style="right:0;">
+  <video id="cameraR" class="videoFeed" autoplay playsinline></video>
+  <div id="sceneR" class="scene"></div>
+</div>
+
+<script>
+// ============================================================
+// 1. ABRIR CÁMARA DEL TELÉFONO
+// ============================================================
+navigator.mediaDevices.getUserMedia({
+  video:{ facingMode:"environment" },
+  audio:false
+}).then(stream => {
+  cameraL.srcObject = stream;
+  cameraR.srcObject = stream;
+});
+
+// ============================================================
+// 2. CREAR PANELES FLOTANTES
+// ============================================================
+const panelsData = [
+  { x: -400, y: -300, z: -600, text:"Panel 1" },
+  { x:  0,   y: -200, z: -800, text:"Panel 2" },
+  { x:  400, y: -300, z: -600, text:"Panel 3" },
+];
+
+const sceneL = document.getElementById("sceneL");
+const sceneR = document.getElementById("sceneR");
+const panels = [];
+
+function createPanels(scene){
+  panelsData.forEach((p,i)=>{
+    let div = document.createElement("div");
+    div.className = "panel";
+    div.style.transform = `translate3d(${p.x}px, ${p.y}px, ${p.z}px)`;
+
+    let text = document.createElement("div");
+    text.innerHTML = p.text;
+    div.appendChild(text);
+
+    let gesture = document.createElement("div");
+    gesture.className = "gesture-zone";
+    gesture.innerHTML = "Mantén la mirada aquí";
+    div.appendChild(gesture);
+
+    div.dataset.index = i;
+    scene.appendChild(div);
+    panels.push({ element:div, ...p, moving:false });
+  });
+}
+
+createPanels(sceneL);
+createPanels(sceneR);
+
+// ============================================================
+// 3. CAPTURAR ORIENTACIÓN DE LA CABEZA
+// ============================================================
+let rotAlpha = 0, rotBeta = 0, rotGamma = 0;
+
+window.addEventListener("deviceorientation", (e)=>{
+  rotAlpha = e.alpha;     // giro horizontal
+  rotBeta  = e.beta;      // inclinación adelante/atrás
+  rotGamma = e.gamma;     // inclinación izquierda/derecha
+
+  updateCameraRotation();
+});
+
+function updateCameraRotation(){
+  const t = `rotateX(${rotBeta * -0.5}deg) rotateY(${rotAlpha * -0.5}deg)`;
+
+  sceneL.style.transform = t;
+  sceneR.style.transform = t;
+}
+
+// ============================================================
+// 4. GAZE DETECTOR: VER SI EL USUARIO MIRA UNA ZONA
+// ============================================================
+let gazeTimer = 0;
+let gazeStart = 0;
+let gazeTarget = null;     // panel/gesto elegido
+let lastAngles = {alpha:rotAlpha, beta:rotBeta};
+
+// CHECK cada 100ms
+setInterval(()=>{
+  detectGaze();
+},100);
+
+function detectGaze(){
+  // Posición central de la pantalla (punto de mira fijo)
+  const cx = window.innerWidth/2;
+  const cy = window.innerHeight/2;
+
+  // Ver qué elemento está en el centro usando elementFromPoint
+  const el = document.elementFromPoint(cx, cy);
+
+  if(!el) return;
+
+  // ¿Estamos mirando una zona de gesto?
+  if(el.classList.contains("gesture-zone")){
+    if(gazeTarget !== el){
+      gazeTarget = el;
+      gazeStart = Date.now();
+    } else {
+      let held = Date.now() - gazeStart;
+      if(held > 1000){ // 1 segundo
+        togglePanelMove(el.parentNode.dataset.index);
+        gazeStart = Date.now(); // reiniciar
+      }
+    }
+  } else {
+    gazeTarget = null;
+  }
+}
+
+// ============================================================
+// 5. MODO MOVER UN PANEL MIRANDO
+// ============================================================
+function togglePanelMove(idx){
+  const p = panels[idx];
+  p.moving = !p.moving;
+  console.log("Panel",idx,p.moving?"MODO MOVER":"MODO FIJO");
+}
+
+setInterval(()=>{
+  panels.forEach((p)=>{
+    if(!p.moving) return;
+
+    // Cambiar posición según rotAlpha/rotBeta (movimiento simple)
+    p.x = -(rotAlpha * 5);
+    p.y = rotBeta * 5 - 200;
+
+    p.element.style.transform = 
+      `translate3d(${p.x}px, ${p.y}px, ${p.z}px)`;
+  });
+},100);
+</script>
+</body>
+</html>
